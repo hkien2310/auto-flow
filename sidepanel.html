@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Auto Flow v5</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="header">
+    <img src="images/logo.png" alt="Auto Flow" class="logo">
+    <div class="header-info">
+      <h1>Auto Flow <span class="version">v5</span></h1>
+      <p class="subtitle">Fire & Forget • TXT Order Mapping</p>
+    </div>
+  </div>
+
+  <div id="statusBar" class="status-bar">
+    <span class="material-symbols-outlined status-icon">radio_button_unchecked</span>
+    <span id="statusText">Idle</span>
+  </div>
+
+  <div class="field-group">
+    <label>Flow Tab</label>
+    <div class="field-actions">
+      <button id="detectTabBtn" class="btn-secondary"><span class="material-symbols-outlined">travel_explore</span> Detect Flow Tab</button>
+    </div>
+    <div id="tabMeta" class="hint">No Flow tab attached</div>
+  </div>
+
+  <div class="field-group">
+    <label>Queue Builder</label>
+    <div class="field-actions">
+      <button id="importTxtBtn" class="btn-secondary"><span class="material-symbols-outlined">description</span> Import TXT</button>
+      <button id="pickImageBtn" class="btn-secondary"><span class="material-symbols-outlined">add_photo_alternate</span> Import Images</button>
+      <button id="addQueueBtn" class="btn-primary"><span class="material-symbols-outlined">playlist_add</span> Add Queue</button>
+      <input type="file" id="txtInput" accept=".txt" hidden>
+      <input type="file" id="imageInput" accept="image/*" multiple hidden>
+    </div>
+    <div id="queueMeta" class="hint">No TXT, no images, queue empty</div>
+    <div class="field-actions" style="margin-top:6px">
+      <input type="text" id="globalPromptInput" placeholder="Global prompt (applies to ALL images, overrides TXT)" style="flex:2">
+    </div>
+  </div>
+
+  <!-- Random Prompts -->
+  <div class="field-group">
+    <label>🎲 Random Prompts <span class="hint" id="randomPromptCount" style="margin-left:auto"></span></label>
+    <textarea id="randomPromptsInput" rows="4" placeholder="Mỗi dòng = 1 prompt animation.&#10;Mỗi ảnh sẽ được gán ngẫu nhiên 1 prompt từ danh sách này.&#10;(Ưu tiên cao nhất — ghi đè Global & TXT)" style="font-size:12px; line-height:1.5;"></textarea>
+  </div>
+
+  <!-- Settings -->
+  <div class="field-group">
+    <label>Delay Between Tasks</label>
+    <div class="field-actions">
+      <input type="number" id="minWait" value="1.5" min="0" step="0.1" style="width:70px; text-align:center" placeholder="Min">
+      <span style="color: var(--text-muted); line-height: 36px;">–</span>
+      <input type="number" id="maxWait" value="4.0" min="0" step="0.1" style="width:70px; text-align:center" placeholder="Max">
+      <span style="color: var(--text-muted); line-height: 36px; font-size:12px;">giây</span>
+    </div>
+  </div>
+
+  <div class="field-group">
+    <label>Delay Between Steps</label>
+    <div class="field-actions">
+      <input type="number" id="minStepWait" value="0.5" min="0" step="0.1" style="width:70px; text-align:center" placeholder="Min">
+      <span style="color: var(--text-muted); line-height: 36px;">–</span>
+      <input type="number" id="maxStepWait" value="2.0" min="0" step="0.1" style="width:70px; text-align:center" placeholder="Max">
+      <span style="color: var(--text-muted); line-height: 36px; font-size:12px;">giây</span>
+    </div>
+  </div>
+
+  <!-- Progress Bar -->
+  <div id="progressSection" class="progress-section hidden">
+    <div class="progress-info">
+      <span id="progressLabel">0 / 0</span>
+      <span id="progressPercent">0%</span>
+    </div>
+    <div class="progress-track">
+      <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+    </div>
+  </div>
+
+  <div class="field-group">
+    <label>Queue Preview</label>
+    <pre id="queueOutput" class="log-output" style="max-height:180px"></pre>
+  </div>
+
+  <div class="field-group">
+    <label>Run</label>
+    <div class="action-row wrap">
+      <button id="startBtn" class="btn-primary"><span class="material-symbols-outlined">play_arrow</span> Start</button>
+      <button id="stopBtn" class="btn-secondary"><span class="material-symbols-outlined">stop</span> Stop</button>
+    </div>
+  </div>
+
+  <div class="field-group">
+    <label>Activity Log</label>
+    <div id="logOutput" class="log-output"></div>
+  </div>
+
+  <div class="field-group" style="background-color: #3b2a2a; border-color: #8c3636;">
+    <label style="color: #ff8c8c;">Debug Pick Logic</label>
+    <div class="field-actions">
+      <input type="text" id="debugPickInput" placeholder="Tên file ảnh (vd: STT_1.jpeg)" style="flex:2">
+      <button id="debugPickBtn" class="btn-secondary" style="border-color: #ff8c8c; color: #ff8c8c;"><span class="material-symbols-outlined">bug_report</span> Test Pick</button>
+    </div>
+  </div>
+
+  <textarea id="promptInput" hidden></textarea>
+  <textarea id="animatePromptsInput" hidden></textarea>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

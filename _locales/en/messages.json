@@ -1,0 +1,10 @@
+{
+  "extName": {
+    "message": "Auto Flow v3 — Side Panel Controller",
+    "description": "Extension name"
+  },
+  "extDescription": {
+    "message": "Side panel extension for controlling Google Flow image-to-video generation with verified selectors and live actions.",
+    "description": "Extension description"
+  }
+}
