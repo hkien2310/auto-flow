@@ -47,6 +47,8 @@
     dom.randomPromptCount = document.getElementById("randomPromptCount");
     dom.debugPickInput = document.getElementById("debugPickInput");
     dom.debugPickBtn = document.getElementById("debugPickBtn");
+    dom.batchSizeInput = document.getElementById("batchSizeInput");
+    dom.startIndexInput = document.getElementById("startIndexInput");
   }
 
   // --- Utilities ---
@@ -289,44 +291,56 @@
 
   // --- Image Upload ---
 
-  async function attachImage(imageFile) {
-    if (!imageFile) throw new Error("IMAGE_NOT_SELECTED");
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(imageFile);
-    });
-    return execInFlowTab(
-      async (fileName, mimeType, rawDataUrl) => {
-        const input = document.querySelector(
-          'input[type="file"][accept*="image"]'
-        );
-        if (!input) return { ok: false, error: "FILE_INPUT_NOT_FOUND" };
-        const res = await fetch(rawDataUrl);
-        const blob = await res.blob();
-        const file = new File([blob], fileName, {
-          type: mimeType || blob.type || "image/png",
-        });
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        input.files = dt.files;
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-        await new Promise((r) => setTimeout(r, 1500));
-        const attached = document.querySelector(
-          "button[data-card-open] img"
-        );
-        return {
-          ok: input.files?.length > 0,
-          attachedDetected: !!(
-            attached && attached.getAttribute("src")
-          ),
-        };
-      },
-      [imageFile.name, imageFile.type, dataUrl],
-      "MAIN"
-    );
+  async function attachImageBatch(imageFiles) {
+    if (!imageFiles || imageFiles.length === 0) throw new Error("NO_IMAGES_TO_UPLOAD");
+    
+    // Khởi tạo mảng tạm trên window của tab Google Flow để tránh lỗi vượt quá dung lượng tin nhắn của Chrome
+    await execInFlowTab(() => { window.__tempFilesData = []; }, [], "MAIN");
+
+    // Truyền tuần tự từng ảnh dưới dạng Base64 vào mảng tạm
+    for (let i = 0; i < imageFiles.length; i++) {
+      const file = imageFiles[i];
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      
+      await execInFlowTab((name, type, url) => {
+        window.__tempFilesData.push({ name, type, dataUrl: url });
+      }, [file.name, file.type || "image/png", dataUrl], "MAIN");
+    }
+
+    // Sau khi đã có đủ data của toàn bộ ảnh ở context của trang web, gộp chúng lại và gán 1 lần duy nhất
+    return execInFlowTab(async () => {
+      const filesArray = window.__tempFilesData || [];
+      const input = document.querySelector('input[type="file"][accept*="image"]');
+      
+      if (!input) {
+         delete window.__tempFilesData;
+         return { ok: false, error: "FILE_INPUT_NOT_FOUND" };
+      }
+      
+      const dt = new DataTransfer();
+      for (const fileData of filesArray) {
+         const res = await fetch(fileData.dataUrl);
+         const blob = await res.blob();
+         const file = new File([blob], fileData.name, { type: fileData.type });
+         dt.items.add(file);
+      }
+      
+      // Gán toàn bộ file vào thẻ input cùng lúc
+      input.files = dt.files;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      
+      // Dọn dẹp mảng tạm
+      delete window.__tempFilesData;
+      
+      await new Promise((r) => setTimeout(r, 1500));
+      return { ok: input.files?.length > 0 };
+    }, [], "MAIN");
   }
 
   // --- Gallery Operations ---
@@ -481,7 +495,7 @@
 
   // --- Job Runner (Fire & Forget) ---
 
-  async function runOneJob(job) {
+  async function runOneJobFromGallery(job) {
     if (!job) throw new Error("QUEUE_EMPTY");
     if (!job.animatePrompt)
       throw new Error(`MISSING_PROMPT: ${job.imageName}`);
@@ -496,15 +510,11 @@
       log(`  🎲 Random prompt: "${actualPrompt.substring(0, 60)}..."`);
     }
 
-    // Giả lập hành vi người dùng thật: mouse move + scroll + random delay
-    // Google track hành vi trên page (reCAPTCHA Enterprise / risk scoring)
-    // → cần generate interaction signals giữa các step
     const simulateHuman = async (action) => {
-      // 1. Mouse movements ngẫu nhiên trên page
       await execInFlowTab(async () => {
         const w = window.innerWidth;
         const h = window.innerHeight;
-        const steps = 3 + Math.floor(Math.random() * 5); // 3-7 movements
+        const steps = 3 + Math.floor(Math.random() * 5);
         for (let i = 0; i < steps; i++) {
           const x = Math.floor(Math.random() * w);
           const y = Math.floor(Math.random() * h);
@@ -513,12 +523,9 @@
           }));
           await new Promise(r => setTimeout(r, 50 + Math.floor(Math.random() * 150)));
         }
-        // 2. Random scroll nhỏ
-        const scrollY = -30 + Math.floor(Math.random() * 60);
-        window.scrollBy({ top: scrollY, behavior: "smooth" });
+        window.scrollBy({ top: -30 + Math.floor(Math.random() * 60), behavior: "smooth" });
       }, [], "MAIN");
 
-      // 3. Random delay (configured via UI)
       const ms = randomStepDelay();
       log(`  ⏳ ${action} (${(ms / 1000).toFixed(1)}s)`, "info");
       await sleep(ms);
@@ -532,14 +539,7 @@
       return f?.getAttribute("src") || "";
     });
 
-    // Step 1: Upload image
-    job.status = "uploading";
-    log(`  [1/5] Uploading image...`);
-    const uploadRes = await attachImage(job.imageFile);
-    if (!uploadRes?.ok) throw new Error(uploadRes?.error || "UPLOAD_FAILED");
-    await simulateHuman("Chờ sau upload");
-
-    // Step 2: Open gallery & pick
+    // Step 2: Open gallery & pick (bỏ qua bước upload vì đã làm chung)
     job.status = "selecting";
     log(`  [2/5] Opening gallery & picking...`);
     const openResult = await stepOpenGallery();
@@ -591,84 +591,104 @@
   async function runQueue() {
     if (state.isQueueRunning) return;
     rebuildQueue();
-    const pendingJobs = state.queue.filter((j) => j.animatePrompt);
+    
+    const startIndex = Math.max(1, parseInt(dom.startIndexInput?.value) || 1) - 1;
+    const queueToProcess = state.queue.slice(startIndex);
+    const pendingJobs = queueToProcess.filter((j) => j.animatePrompt);
+    
     if (pendingJobs.length === 0) {
-      log("No matched jobs in queue", "warn");
+      log("No matched jobs in queue (or all were skipped)", "warn");
       return;
     }
 
     state.isQueueRunning = true;
     state.stopRequested = false;
-    setStatus("Running queue...", "running");
+    setStatus(`Running queue from image #${startIndex + 1}...`, "running");
     updateProgress(0, pendingJobs.length);
 
     let completed = 0;
     let failed = 0;
+    const batchSize = Math.max(1, parseInt(dom.batchSizeInput?.value) || 4);
 
     try {
-      for (
-        ;
-        state.queueIndex < state.queue.length;
-        state.queueIndex++
-      ) {
+      const chunks = [];
+      for (let i = 0; i < pendingJobs.length; i += batchSize) {
+        chunks.push(pendingJobs.slice(i, i + batchSize));
+      }
+
+      for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
         if (state.stopRequested) {
           log("⏹ Stop requested, queue halted", "warn");
           break;
         }
 
-        const job = state.queue[state.queueIndex];
-        if (!job.animatePrompt) {
-          log(`⏭ Skipped (no prompt): ${job.imageName}`, "warn");
-          job.status = "skipped";
-          continue;
-        }
+        const chunk = chunks[chunkIdx];
+        log(`\n📦 --- BATCH ${chunkIdx + 1}/${chunks.length} (${chunk.length} ảnh) ---`, "info");
+        
+        // Bước 1: Upload cả batch lên cùng lúc (làm tuần tự rất nhanh)
+        log(`  [1/5] Uploading batch of ${chunk.length} images...`);
         try {
-          await runOneJob(job);
-          completed++;
-        } catch (error) {
-          failed++;
-          job.status = "failed";
-          log(
-            `✗ Failed: ${job.imageName} — ${error.message}`,
-            "error"
-          );
-          if (error.message === "STOP_REQUESTED") break;
-          // Continue to next job
-          await sleep(2000);
+          const files = chunk.map(j => j.imageFile);
+          const uploadRes = await attachImageBatch(files);
+          if (!uploadRes?.ok) throw new Error(uploadRes?.error || "BATCH_UPLOAD_FAILED");
+          chunk.forEach(j => { j.status = "uploading" });
+        } catch (e) {
+          log(`  ❌ Batch upload failed: ${e.message}`, "error");
+          chunk.forEach(j => { 
+             j.status = "failed"; 
+             failed++; 
+             state.queueIndex++; 
+          });
+          updateProgress(completed + failed, pendingJobs.length);
+          if (e.message === "STOP_REQUESTED") break;
+          continue; // Skip chunk
         }
-        updateProgress(completed + failed, pendingJobs.length);
 
-        // ── Fire & Forget Delay + continuous behavior simulation ──
-        if (state.queueIndex < state.queue.length - 1 && !state.stopRequested) {
-          const waitMs = randomDelay();
-          const waitSec = Math.round(waitMs / 1000);
-          log(`  ⏱️ Chờ ${waitSec}s trước task tiếp (+ simulate behavior)...`);
-          setStatus(`Waiting ${waitSec}s...`, "running");
+        // Bước 2: Xử lý lần lượt từng job trong batch
+        for (let jIdx = 0; jIdx < chunk.length; jIdx++) {
+           if (state.stopRequested) break;
+           const job = chunk[jIdx];
+           state.queueIndex = state.queue.indexOf(job);
+           
+           try {
+             await runOneJobFromGallery(job);
+             completed++;
+           } catch (error) {
+             failed++;
+             job.status = "failed";
+             log(`✗ Failed: ${job.imageName} — ${error.message}`, "error");
+             if (error.message === "STOP_REQUESTED") break;
+             await sleep(2000);
+           }
+           updateProgress(completed + failed, pendingJobs.length);
 
-          // Simulate mouse/scroll liên tục trong thời gian chờ
-          // (mỗi 5-8s một lần, cho đến hết waitMs)
-          const startTime = Date.now();
-          while (Date.now() - startTime < waitMs && !state.stopRequested) {
-            const chunk = 5000 + Math.floor(Math.random() * 3000); // 5-8s
-            await sleep(Math.min(chunk, waitMs - (Date.now() - startTime)));
-            if (state.stopRequested) break;
-            // Simulate behavior
-            try {
-              await execInFlowTab(async () => {
-                const w = window.innerWidth;
-                const h = window.innerHeight;
-                for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) {
-                  document.dispatchEvent(new MouseEvent("mousemove", {
-                    bubbles: true,
-                    clientX: Math.floor(Math.random() * w),
-                    clientY: Math.floor(Math.random() * h),
-                  }));
-                  await new Promise(r => setTimeout(r, 80 + Math.floor(Math.random() * 120)));
-                }
-                window.scrollBy({ top: -20 + Math.floor(Math.random() * 40), behavior: "smooth" });
-              }, [], "MAIN");
-            } catch (_) {}
-          }
+           const isLastJobInWholeQueue = (chunkIdx === chunks.length - 1 && jIdx === chunk.length - 1);
+           if (!isLastJobInWholeQueue && !state.stopRequested) {
+             const waitMs = randomDelay();
+             const waitSec = Math.round(waitMs / 1000);
+             log(`  ⏱️ Chờ ${waitSec}s trước task tiếp...`);
+             setStatus(`Waiting ${waitSec}s...`, "running");
+
+             const startTime = Date.now();
+             while (Date.now() - startTime < waitMs && !state.stopRequested) {
+               const chunkSleep = 5000 + Math.floor(Math.random() * 3000);
+               await sleep(Math.min(chunkSleep, waitMs - (Date.now() - startTime)));
+               if (state.stopRequested) break;
+               try {
+                 await execInFlowTab(async () => {
+                   const w = window.innerWidth;
+                   const h = window.innerHeight;
+                   for (let i = 0; i < 2 + Math.floor(Math.random() * 3); i++) {
+                     document.dispatchEvent(new MouseEvent("mousemove", {
+                       bubbles: true, clientX: Math.floor(Math.random() * w), clientY: Math.floor(Math.random() * h)
+                     }));
+                     await new Promise(r => setTimeout(r, 80 + Math.floor(Math.random() * 120)));
+                   }
+                   window.scrollBy({ top: -20 + Math.floor(Math.random() * 40), behavior: "smooth" });
+                 }, [], "MAIN");
+               } catch (_) {}
+             }
+           }
         }
       }
 
