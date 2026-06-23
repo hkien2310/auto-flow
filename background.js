@@ -50,10 +50,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                               b.querySelector('.google-symbols').textContent === "arrow_forward";
               const isVisible = b.offsetWidth > 0 && b.offsetHeight > 0;
               const isLikely = b.classList.contains("eaSocK") || b.closest('.sc-e5032833-10');
-              return (hasCreate || hasIcon) && isVisible && isLikely;
+              const isNotPopup = !b.hasAttribute("aria-haspopup");
+              return (hasCreate || hasIcon) && isVisible && isLikely && isNotPopup;
             }) || all.find(b => {
               const t = b.textContent?.toLowerCase() || "";
-              return (t.includes("create") || b.innerHTML.includes("arrow_forward")) && b.offsetWidth > 0;
+              const isSubmit = t.includes("create") || b.innerHTML.includes("arrow_forward");
+              const isAdd2 = b.innerHTML.includes("add_2");
+              const isNotPopup = !b.hasAttribute("aria-haspopup");
+              return isSubmit && !isAdd2 && isNotPopup && b.offsetWidth > 0;
             });
 
             if (!target) {

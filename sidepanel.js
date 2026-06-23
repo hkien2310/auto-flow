@@ -361,7 +361,12 @@
 
       const trigger = Array.from(
         document.querySelectorAll('[aria-haspopup="dialog"]')
-      ).find((e) => n(e.textContent || "") === "start");
+      ).find((e) => {
+        const t = n(e.textContent || "");
+        // t === "start" (Frame to video)
+        // t.includes("add_2") (Imgredient to video, icon text is "add_2")
+        return t === "start" || t.includes("add_2");
+      });
       if (!trigger) return { ok: false, error: "START_TRIGGER_NOT_FOUND" };
 
       const existing = findGalleryDialog();
